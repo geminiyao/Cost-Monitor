@@ -243,7 +243,28 @@ export class CostSidebarProvider implements vscode.WebviewViewProvider {
     if (hist.length > 1) drawChart(hist);
   }
 
+  let currentHist = [];
+  let resizeObserver = null;
+
   function drawChart(hist) {
+    currentHist = hist;
+    const canvas = document.getElementById('trendChart');
+    if (!canvas) return;
+
+    // Setup ResizeObserver if not already done
+    if (!resizeObserver) {
+      resizeObserver = new ResizeObserver(() => {
+        if (currentHist.length > 0) {
+          drawChartInner(currentHist);
+        }
+      });
+      resizeObserver.observe(canvas.parentElement);
+    }
+
+    drawChartInner(hist);
+  }
+
+  function drawChartInner(hist) {
     const canvas = document.getElementById('trendChart');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
