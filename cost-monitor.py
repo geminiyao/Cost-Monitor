@@ -229,6 +229,51 @@ def run_cli(input_data):
 
     print(title_seq + display)
 
+    # Write .cost-state.json for VS Code extension to read
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    state_path = os.path.join(script_dir, ".cost-state.json")
+
+    level = "normal"
+    warnings = []
+    if pct >= DANGER_PCT:
+        level = "danger"
+        warnings.append("Context nearly full — start a new chat now")
+    elif pct >= WARN_PCT:
+        level = "warning"
+        warnings.append("Context getting heavy — consider wrapping up")
+
+    state = {
+        "turns": turns,
+        "pct": pct,
+        "est_ctx": data["last_input"],
+        "est_output": data["total_output"],
+        "cost": round(cost, 4),
+        "level": level,
+        "warnings": warnings,
+        "breakdown": {
+            "system": data["est_system"],
+            "conversation": data["est_conversation"],
+            "tool_io": data["est_tool_io"],
+        },
+        "history": [],  # Will be managed by the extension
+    }
+
+    # Read existing history if available
+    if os.path.exists(state_path):
+        try:
+            with open(state_path, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+                state["history"] = existing.get("history", [])
+        except Exception:
+            pass
+
+    state["history"].append({"turn": turns, "pct": pct, "cost": round(cost, 4)})
+    if len(state["history"]) > 50:
+        state["history"] = state["history"][-50:]
+
+    with open(state_path, "w", encoding="utf-8") as f:
+        json.dump(state, f, indent=2)
+
 
 # ── Cursor entry point ────────────────────────────────────────────────
 
