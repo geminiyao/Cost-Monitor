@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "afterResponse": [
+      {
+        "type": "command",
+        "command": "python .codebuddy/hooks/cost-monitor.py",
+        "description": "Cost Monitor: track token usage after each response"
+      }
+    ]
+  }
+}

@@ -29,14 +29,16 @@ export class CostDataWatcher implements vscode.Disposable {
     if (!folders || folders.length === 0) return;
 
     for (const folder of folders) {
-      const statePath = path.join(
-        folder.uri.fsPath,
-        ".codebuddy",
-        "hooks",
-        ".cost-state.json"
-      );
-      this.tryWatch(statePath);
-      this.readAndEmit(statePath);
+      // Watch both .codebuddy/hooks/ and .cursor/hooks/ for compatibility
+      const pathsToWatch = [
+        path.join(folder.uri.fsPath, ".codebuddy", "hooks", ".cost-state.json"),
+        path.join(folder.uri.fsPath, ".cursor", "hooks", ".cost-state.json")
+      ];
+
+      for (const statePath of pathsToWatch) {
+        this.tryWatch(statePath);
+        this.readAndEmit(statePath);
+      }
     }
   }
 
@@ -72,22 +74,24 @@ export class CostDataWatcher implements vscode.Disposable {
     const folders = vscode.workspace.workspaceFolders;
     if (!folders) return;
     for (const folder of folders) {
-      const statePath = path.join(
-        folder.uri.fsPath,
-        ".codebuddy",
-        "hooks",
-        ".cost-state.json"
-      );
-      try {
-        if (fs.existsSync(statePath)) {
-          fs.writeFileSync(
-            statePath,
-            JSON.stringify({ turns: 0, cumul_chars: 0, last_ts: 0 }, null, 2),
-            "utf-8"
-          );
+      // Reset both .codebuddy/hooks/ and .cursor/hooks/ for compatibility
+      const pathsToReset = [
+        path.join(folder.uri.fsPath, ".codebuddy", "hooks", ".cost-state.json"),
+        path.join(folder.uri.fsPath, ".cursor", "hooks", ".cost-state.json")
+      ];
+
+      for (const statePath of pathsToReset) {
+        try {
+          if (fs.existsSync(statePath)) {
+            fs.writeFileSync(
+              statePath,
+              JSON.stringify({ turns: 0, cumul_chars: 0, last_ts: 0 }, null, 2),
+              "utf-8"
+            );
+          }
+        } catch {
+          // ignore
         }
-      } catch {
-        // ignore
       }
     }
     this.onUpdate(null);
