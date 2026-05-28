@@ -40,6 +40,10 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(statusBar, watcher);
 
   watcher.init();
+
+  // Send initial status to sidebar
+  const initialStatus = watcher.getStatus();
+  sidebarProvider.updateStatus(initialStatus);
 }
 
 export function deactivate() {}

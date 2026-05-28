@@ -4,6 +4,7 @@ import { CostState } from "./types";
 export class CostSidebarProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private latestData: CostState | null = null;
+  private latestStatus: any = null;
 
   constructor(private readonly extensionUri: vscode.Uri) {}
 
@@ -14,6 +15,9 @@ export class CostSidebarProvider implements vscode.WebviewViewProvider {
     if (this.latestData) {
       this.postData(this.latestData);
     }
+    if (this.latestStatus) {
+      this.postStatus(this.latestStatus);
+    }
   }
 
   update(data: CostState | null) {
@@ -23,8 +27,19 @@ export class CostSidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  updateStatus(status: any) {
+    this.latestStatus = status;
+    if (this.view) {
+      this.postStatus(status);
+    }
+  }
+
   private postData(data: CostState | null) {
     this.view?.webview.postMessage({ type: "update", data });
+  }
+
+  private postStatus(status: any) {
+    this.view?.webview.postMessage({ type: "status", status });
   }
 
   private getHtml(): string {
@@ -45,7 +60,7 @@ export class CostSidebarProvider implements vscode.WebviewViewProvider {
     --badge-bg: var(--vscode-badge-background);
     --badge-fg: var(--vscode-badge-foreground);
   }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  * { box-sizing: border-box; margin:0; padding:0; }
   body {
     font-family: var(--vscode-font-family);
     font-size: var(--vscode-font-size);
@@ -143,9 +158,35 @@ export class CostSidebarProvider implements vscode.WebviewViewProvider {
   .empty-state {
     text-align: center;
     color: var(--muted);
-    padding: 40px 0;
+    padding: 20px 0;
   }
   .empty-state .icon { font-size: 32px; margin-bottom: 8px; }
+  .diag-info {
+    text-align: left;
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 12px;
+    padding: 8px;
+    background: var(--vscode-input-background);
+    border-radius: 4px;
+  }
+  .diag-info h3 {
+    font-size: 11px;
+    margin-bottom: 4px;
+    color: var(--fg);
+  }
+  .diag-info ul {
+    margin: 0;
+    padding-left: 16px;
+  }
+  .diag-info li {
+    margin-bottom: 2px;
+  }
+  .diag-path {
+    font-family: monospace;
+    font-size: 10px;
+    word-break: break-all;
+  }
 </style>
 </head>
 <body>
@@ -154,12 +195,14 @@ export class CostSidebarProvider implements vscode.WebviewViewProvider {
     <div class="icon">&#9889;</div>
     <div>Waiting for session data...</div>
     <div style="font-size:11px;margin-top:4px;">Start a chat to see cost monitoring</div>
+    <div id="diag"></div>
   </div>
 </div>
 <script>
 (function() {
   const app = document.getElementById('app');
   const vscode = acquireVsCodeApi();
+  let currentStatus = null;
 
   function fmtTok(n) {
     if (n >= 1e6) return (n/1e6).toFixed(1)+'M';
@@ -173,9 +216,48 @@ export class CostSidebarProvider implements vscode.WebviewViewProvider {
     return 'var(--green)';
   }
 
+  function renderDiag(status) {
+    const diag = document.getElementById('diag');
+    if (!diag || !status) return;
+    
+    let html = '<div class="diag-info">';
+    html += '<h3>Diagnostic Info</h3>';
+    
+    // Workspace folders
+    if (!status.workspaceFolders || status.workspaceFolders.length === 0) {
+      html += '<div style="color:var(--red);">No workspace folder open</div>';
+      html += '<div>Open a folder to use Cost Monitor</div>';
+    } else {
+      html += '<div>Workspace folders:</div><ul>';
+      status.workspaceFolders.forEach(f => {
+        html += '<li class="diag-path">' + f + '</li>';
+      });
+      html += '</ul>';
+      
+      // Watching paths
+      if (status.watchingPaths && status.watchingPaths.length > 0) {
+        html += '<div>Watching:</div><ul>';
+        status.watchingPaths.forEach(p => {
+          const exists = status.foundStateFiles && status.foundStateFiles.includes(p);
+          html += '<li class="diag-path">' + p + (exists ? ' ✓' : ' (not found)') + '</li>';
+        });
+        html += '</ul>';
+      }
+      
+      if (!status.foundStateFiles || status.foundStateFiles.length === 0) {
+        html += '<div style="color:var(--yellow);margin-top:4px;">No .cost-state.json found</div>';
+        html += '<div>Hook may not have run yet. Try starting a chat.</div>';
+      }
+    }
+    
+    html += '</div>';
+    diag.innerHTML = html;
+  }
+
   function render(d) {
     if (!d || !d.turns) {
-      app.innerHTML = '<div class="empty-state"><div class="icon">&#9889;</div><div>Waiting for session data...</div><div style="font-size:11px;margin-top:4px;">Start a chat to see cost monitoring</div></div>';
+      app.innerHTML = '<div class="empty-state"><div class="icon">&#9889;</div><div>Waiting for session data...</div><div style="font-size:11px;margin-top:4px;">Start a chat to see cost monitoring</div><div id="diag"></div></div>';
+      if (currentStatus) renderDiag(currentStatus);
       return;
     }
     const color = levelColor(d.level);
@@ -251,7 +333,6 @@ export class CostSidebarProvider implements vscode.WebviewViewProvider {
     const canvas = document.getElementById('trendChart');
     if (!canvas) return;
 
-    // Setup ResizeObserver if not already done
     if (!resizeObserver) {
       resizeObserver = new ResizeObserver(() => {
         if (currentHist.length > 0) {
@@ -280,7 +361,6 @@ export class CostSidebarProvider implements vscode.WebviewViewProvider {
 
     ctx.clearRect(0, 0, W, H);
 
-    // grid lines
     const style = getComputedStyle(document.documentElement);
     const muted = style.getPropertyValue('--muted').trim() || '#666';
     ctx.strokeStyle = muted;
@@ -292,7 +372,6 @@ export class CostSidebarProvider implements vscode.WebviewViewProvider {
     });
     ctx.globalAlpha = 1;
 
-    // threshold lines
     ctx.setLineDash([4,4]);
     ctx.lineWidth = 1;
     const warnY = pad.t + ch - (40/100)*ch;
@@ -303,7 +382,6 @@ export class CostSidebarProvider implements vscode.WebviewViewProvider {
     ctx.beginPath(); ctx.moveTo(pad.l, dangerY); ctx.lineTo(pad.l+cw, dangerY); ctx.stroke();
     ctx.setLineDash([]);
 
-    // data line
     const pts = hist.map((h, i) => ({
       x: pad.l + (hist.length === 1 ? cw/2 : (i/(hist.length-1))*cw),
       y: pad.t + ch - (h.pct/100)*ch
@@ -315,7 +393,6 @@ export class CostSidebarProvider implements vscode.WebviewViewProvider {
     pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
     ctx.stroke();
 
-    // fill under line
     ctx.globalAlpha = 0.1;
     ctx.fillStyle = green;
     ctx.beginPath();
@@ -326,7 +403,6 @@ export class CostSidebarProvider implements vscode.WebviewViewProvider {
     ctx.fill();
     ctx.globalAlpha = 1;
 
-    // dots
     pts.forEach(p => {
       ctx.fillStyle = green;
       ctx.beginPath();
@@ -334,7 +410,6 @@ export class CostSidebarProvider implements vscode.WebviewViewProvider {
       ctx.fill();
     });
 
-    // Y axis labels
     ctx.fillStyle = muted;
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'right';
@@ -343,7 +418,6 @@ export class CostSidebarProvider implements vscode.WebviewViewProvider {
       ctx.fillText(v+'%', pad.l - 4, y + 3);
     });
 
-    // X axis labels
     ctx.textAlign = 'center';
     if (hist.length <= 10) {
       hist.forEach((h, i) => {
@@ -359,13 +433,21 @@ export class CostSidebarProvider implements vscode.WebviewViewProvider {
 
   window.addEventListener('message', e => {
     if (e.data.type === 'update') render(e.data.data);
+    if (e.data.type === 'status') {
+      currentStatus = e.data.status;
+      // Re-render diag if in empty state
+      const diag = document.getElementById('diag');
+      if (diag && !e.data.data) renderDiag(currentStatus);
+    }
   });
 
   const prev = vscode.getState();
   if (prev && prev.data) render(prev.data);
+  if (prev && prev.status) { currentStatus = prev.status; renderDiag(currentStatus); }
 
   window.addEventListener('message', e => {
-    if (e.data.type === 'update') vscode.setState({data: e.data.data});
+    if (e.data.type === 'update') vscode.setState({data: e.data.data, status: currentStatus});
+    if (e.data.type === 'status') vscode.setState({data: e.data.data, status: e.data.status});
   });
 })();
 </script>

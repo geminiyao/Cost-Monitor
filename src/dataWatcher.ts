@@ -3,6 +3,12 @@ import * as fs from "fs";
 import * as path from "path";
 import { CostState } from "./types";
 
+export interface WatcherStatus {
+  workspaceFolders: string[];
+  watchingPaths: string[];
+  foundStateFiles: string[];
+}
+
 export class CostDataWatcher implements vscode.Disposable {
   private disposables: vscode.Disposable[] = [];
   private fsWatchers: fs.FSWatcher[] = [];
@@ -23,6 +29,30 @@ export class CostDataWatcher implements vscode.Disposable {
     );
   }
 
+  getStatus(): WatcherStatus {
+    const folders = vscode.workspace.workspaceFolders;
+    const workspaceFolders = folders ? folders.map(f => f.uri.fsPath) : [];
+    
+    const watchingPaths: string[] = [];
+    const foundStateFiles: string[] = [];
+    
+    for (const folder of workspaceFolders) {
+      const pathsToCheck = [
+        path.join(folder, ".codebuddy", "hooks", ".cost-state.json"),
+        path.join(folder, ".cursor", "hooks", ".cost-state.json")
+      ];
+      
+      for (const statePath of pathsToCheck) {
+        watchingPaths.push(statePath);
+        if (fs.existsSync(statePath)) {
+          foundStateFiles.push(statePath);
+        }
+      }
+    }
+    
+    return { workspaceFolders, watchingPaths, foundStateFiles };
+  }
+
   private watchAllWorkspaces() {
     this.stopFsWatch();
     this.watchedPaths.clear();
@@ -34,14 +64,12 @@ export class CostDataWatcher implements vscode.Disposable {
     }
 
     for (const folder of folders) {
-      // Watch both .codebuddy/hooks/ and .cursor/hooks/ for compatibility
       const pathsToWatch = [
         path.join(folder.uri.fsPath, ".codebuddy", "hooks", ".cost-state.json"),
         path.join(folder.uri.fsPath, ".cursor", "hooks", ".cost-state.json")
       ];
 
       for (const statePath of pathsToWatch) {
-        // Ensure directory exists
         const dir = path.dirname(statePath);
         if (!fs.existsSync(dir)) {
           try {
@@ -61,7 +89,7 @@ export class CostDataWatcher implements vscode.Disposable {
 
   private tryWatch(filePath: string) {
     if (this.watchedPaths.has(filePath)) {
-      return; // Already watching this path
+      return;
     }
 
     const dir = path.dirname(filePath);
