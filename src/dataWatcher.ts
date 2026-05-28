@@ -5,9 +5,10 @@ import { CostState } from "./types";
 
 export class CostDataWatcher implements vscode.Disposable {
   private disposables: vscode.Disposable[] = [];
-  private fsWatcher: fs.FSWatcher | null = null;
+  private fsWatchers: fs.FSWatcher[] = [];
   private debounceTimer: NodeJS.Timeout | null = null;
   private onUpdate: (data: CostState | null) => void;
+  private watchedPaths: Set<string> = new Set();
 
   constructor(onUpdate: (data: CostState | null) => void) {
     this.onUpdate = onUpdate;
@@ -24,9 +25,13 @@ export class CostDataWatcher implements vscode.Disposable {
 
   private watchAllWorkspaces() {
     this.stopFsWatch();
+    this.watchedPaths.clear();
 
     const folders = vscode.workspace.workspaceFolders;
-    if (!folders || folders.length === 0) return;
+    if (!folders || folders.length === 0) {
+      console.log("[CostMonitor] No workspace folders found");
+      return;
+    }
 
     for (const folder of folders) {
       // Watch both .codebuddy/hooks/ and .cursor/hooks/ for compatibility
@@ -36,6 +41,18 @@ export class CostDataWatcher implements vscode.Disposable {
       ];
 
       for (const statePath of pathsToWatch) {
+        // Ensure directory exists
+        const dir = path.dirname(statePath);
+        if (!fs.existsSync(dir)) {
+          try {
+            fs.mkdirSync(dir, { recursive: true });
+            console.log(`[CostMonitor] Created directory: ${dir}`);
+          } catch (err) {
+            console.log(`[CostMonitor] Failed to create directory ${dir}:`, err);
+            continue;
+          }
+        }
+
         this.tryWatch(statePath);
         this.readAndEmit(statePath);
       }
@@ -43,30 +60,50 @@ export class CostDataWatcher implements vscode.Disposable {
   }
 
   private tryWatch(filePath: string) {
+    if (this.watchedPaths.has(filePath)) {
+      return; // Already watching this path
+    }
+
     const dir = path.dirname(filePath);
     const base = path.basename(filePath);
 
     try {
-      if (!fs.existsSync(dir)) return;
+      if (!fs.existsSync(dir)) {
+        console.log(`[CostMonitor] Directory does not exist: ${dir}`);
+        return;
+      }
 
-      this.fsWatcher = fs.watch(dir, (eventType, filename) => {
+      const watcher = fs.watch(dir, (eventType, filename) => {
         if (filename !== base) return;
+        console.log(`[CostMonitor] File changed: ${filePath}`);
         if (this.debounceTimer) clearTimeout(this.debounceTimer);
         this.debounceTimer = setTimeout(() => this.readAndEmit(filePath), 200);
       });
-    } catch {
-      // directory may not exist yet; silently ignore
+
+      this.fsWatchers.push(watcher);
+      this.watchedPaths.add(filePath);
+      console.log(`[CostMonitor] Watching: ${filePath}`);
+    } catch (err) {
+      console.log(`[CostMonitor] Failed to watch ${filePath}:`, err);
     }
   }
 
   private readAndEmit(filePath: string) {
     try {
-      if (!fs.existsSync(filePath)) return;
+      if (!fs.existsSync(filePath)) {
+        console.log(`[CostMonitor] File not found: ${filePath}`);
+        return;
+      }
       const raw = fs.readFileSync(filePath, "utf-8");
       const data: CostState = JSON.parse(raw);
+      console.log(`[CostMonitor] Read data from ${filePath}:`, {
+        turns: data.turns,
+        pct: data.pct,
+        cost: data.cost
+      });
       this.onUpdate(data);
-    } catch {
-      // malformed JSON or file locked; skip
+    } catch (err) {
+      console.log(`[CostMonitor] Failed to read ${filePath}:`, err);
     }
   }
 
@@ -74,7 +111,6 @@ export class CostDataWatcher implements vscode.Disposable {
     const folders = vscode.workspace.workspaceFolders;
     if (!folders) return;
     for (const folder of folders) {
-      // Reset both .codebuddy/hooks/ and .cursor/hooks/ for compatibility
       const pathsToReset = [
         path.join(folder.uri.fsPath, ".codebuddy", "hooks", ".cost-state.json"),
         path.join(folder.uri.fsPath, ".cursor", "hooks", ".cost-state.json")
@@ -98,10 +134,11 @@ export class CostDataWatcher implements vscode.Disposable {
   }
 
   private stopFsWatch() {
-    if (this.fsWatcher) {
-      this.fsWatcher.close();
-      this.fsWatcher = null;
+    for (const watcher of this.fsWatchers) {
+      watcher.close();
     }
+    this.fsWatchers = [];
+    this.watchedPaths.clear();
   }
 
   dispose() {
