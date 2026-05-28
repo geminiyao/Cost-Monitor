@@ -1,0 +1,5 @@
+{
+  "name": "cost-monitor-hud",
+  "description": "Persistent statusline HUD showing context usage, cost estimation, and session health.",
+  "version": "0.1.0"
+}

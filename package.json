@@ -1,0 +1,54 @@
+{
+  "name": "cost-monitor-hud",
+  "displayName": "Cost Monitor HUD",
+  "description": "Persistent status bar HUD showing AI context usage, token cost, and session health.",
+  "version": "0.1.0",
+  "publisher": "aoe-tools",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "costMonitor.showDetail",
+        "title": "Cost Monitor: Show Detail Panel"
+      },
+      {
+        "command": "costMonitor.reset",
+        "title": "Cost Monitor: Reset Session"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "cost-monitor",
+          "title": "Cost Monitor",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "cost-monitor": [
+        {
+          "type": "webview",
+          "id": "costMonitor.sidebar",
+          "name": "Cost Monitor"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "npx @vscode/vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/node": "^18.0.0",
+    "typescript": "^5.0.0",
+    "@vscode/vsce": "^3.0.0"
+  }
+}
