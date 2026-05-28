@@ -2,7 +2,7 @@
   "name": "cost-monitor-hud",
   "displayName": "Cost Monitor HUD",
   "description": "Persistent status bar HUD showing AI context usage, token cost, and session health.",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "publisher": "aoe-tools",
   "engines": {
     "vscode": "^1.80.0"
